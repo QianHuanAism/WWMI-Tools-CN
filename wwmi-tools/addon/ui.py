@@ -3,7 +3,6 @@ import bpy
 
 from textwrap import dedent
 
-
 from bpy.props import BoolProperty, StringProperty, PointerProperty, IntProperty, FloatProperty, CollectionProperty
 
 from .. import bl_info
@@ -75,6 +74,13 @@ class WWMI_TOOLS_PT_SIDEBAR(bpy.types.Panel):
         cfg = context.scene.wwmi_tools_settings
         layout = self.layout
 
+        if bpy.app.version[:2] == (4, 2):
+            layout.alert = True
+            layout.label(text="Blender 4.2 is not supported!", icon="ERROR")
+            layout.label(text="This Blender version cannot handle custom split normals properly due to regression.")
+            layout.alert = False
+            return
+
         layout.row().prop(cfg, 'tool_mode')
 
         if cfg.tool_mode == 'TOOLS_MODE':
@@ -100,6 +106,9 @@ class WWMI_TOOLS_PT_SIDEBAR(bpy.types.Panel):
         layout.row().operator(WWMI_RemoveAllVertexGroups.bl_idname)
         layout.row().operator(WWMI_CreateMergedObject.bl_idname)
         layout.row().operator(WWMI_ApplyMergedObjectSculpt.bl_idname)
+        layout.row().operator(WWMI_ApplyMergedObjectSculptWithShapekeys.bl_idname)
+        layout.row().operator(WWMI_ConvertVertexColors.bl_idname)
+        
 
     def draw_menu_export_mod(self, context):
         cfg = context.scene.wwmi_tools_settings
@@ -118,26 +127,11 @@ class WWMI_TOOLS_PT_SIDEBAR(bpy.types.Panel):
         
         layout.row().prop(cfg, 'mod_skeleton_type')
 
-        layout.row()
-        
-        layout.row().prop(cfg, 'partial_export')
-
         if not cfg.partial_export:
+
             layout.row()
 
             layout.row().prop(cfg, 'mirror_mesh')
-            
-            if bpy.app.version >= (3, 5):
-                row = layout.row()
-                row.prop(cfg, 'ignore_nested_collections')
-                if not cfg.ignore_nested_collections:
-                    row.prop(cfg, 'ignore_hidden_collections')
-                
-            layout.row().prop(cfg, 'ignore_hidden_objects')
-            layout.row().prop(cfg, 'ignore_muted_shape_keys')
-
-            layout.row()
-            
             layout.row().prop(cfg, 'apply_all_modifiers')
             layout.row().prop(cfg, 'copy_textures')
 
@@ -147,10 +141,19 @@ class WWMI_TOOLS_PT_SIDEBAR(bpy.types.Panel):
             grid.prop(cfg, 'write_ini')
             if cfg.write_ini:
                 grid.prop(cfg, 'comment_ini')
+                    
+            layout.row()
+            layout.row()
 
-                if cfg.mod_skeleton_type == 'MERGED':
-                    layout.row().prop(cfg, 'skeleton_scale')
-                layout.row().prop(cfg, 'unrestricted_custom_shape_keys')
+            if bpy.app.version >= (3, 5):
+                row = layout.row()
+                row.prop(cfg, 'ignore_nested_collections')
+                if not cfg.ignore_nested_collections:
+                    row.prop(cfg, 'ignore_hidden_collections')
+                
+            layout.row().prop(cfg, 'ignore_hidden_objects')
+            layout.row().prop(cfg, 'ignore_muted_shape_keys')
+
 
     def draw_menu_import_object(self, context):
         cfg = context.scene.wwmi_tools_settings
@@ -161,7 +164,10 @@ class WWMI_TOOLS_PT_SIDEBAR(bpy.types.Panel):
         row = add_row_with_error_handler(layout, cfg, 'object_source_folder')
         row.prop(cfg, 'object_source_folder')
 
+        layout.row().prop(cfg, 'color_storage')
         layout.row().prop(cfg, 'import_skeleton_type')
+        if cfg.import_skeleton_type == 'MERGED':
+            layout.row().prop(cfg, 'skip_empty_vertex_groups')
         layout.row().prop(cfg, 'mirror_mesh')
 
         layout.row()
@@ -205,7 +211,7 @@ class WWMI_TOOLS_PT_SidePanelPartialExport(bpy.types.Panel):
     bl_category = "WWMI Tools"
     bl_options = {'HIDE_HEADER'}
     bl_idname = 'wwmi_1'
-    bl_order = 1
+    bl_order = 12
 
     @classmethod
     def poll(cls, context):
@@ -223,6 +229,33 @@ class WWMI_TOOLS_PT_SidePanelPartialExport(bpy.types.Panel):
         box.row().prop(cfg, 'export_colors')
         box.row().prop(cfg, 'export_texcoords')
         box.row().prop(cfg, 'export_shapekeys')
+
+
+class WWMI_TOOLS_PT_SidePanelAdvancedExport(bpy.types.Panel):
+    bl_label = "高级选项"
+    bl_parent_id = "WWMI_TOOLS_PT_SIDEBAR"
+    # bl_options = {'DEFAULT_CLOSED'}
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "WWMI Tools"
+    bl_order = 10
+
+    @classmethod
+    def poll(cls, context):
+        cfg = context.scene.wwmi_tools_settings
+        return cfg.tool_mode == 'EXPORT_MOD'
+
+    def draw(self, context):
+        layout = self.layout
+        cfg = context.scene.wwmi_tools_settings
+
+        if not cfg.partial_export:
+            layout.row().prop(cfg, 'add_missing_vertex_groups')
+            layout.row().prop(cfg, 'unrestricted_custom_shape_keys')
+            if cfg.mod_skeleton_type == 'MERGED':
+                layout.row().prop(cfg, 'skeleton_scale')
+
+        layout.row().prop(cfg, 'partial_export')
 
 
 class WWMI_TOOLS_PT_SidePanelModInfo(bpy.types.Panel):
@@ -250,7 +283,7 @@ class WWMI_TOOLS_PT_SidePanelModInfo(bpy.types.Panel):
 
 
 class WWMI_TOOLS_PT_SidePanelIniTemplate(bpy.types.Panel):
-    bl_label = "INI 模版"
+    bl_label = "Ini Template"
     bl_idname = "WWMI_TOOLS_PT_INI_TEMPLATE"
     bl_parent_id = "WWMI_TOOLS_PT_SIDEBAR"
     bl_options = {'DEFAULT_CLOSED'}
@@ -293,9 +326,9 @@ class WWMI_TOOLS_PT_SidePanelIniTemplate(bpy.types.Panel):
             
             col_right = split.column()
             if cfg.custom_template_live_update:
-                col_right.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="停止 INI 更新")
+                col_right.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="Stop Ini Updates")
             else:
-                col_right.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="启动 INI 更新")
+                col_right.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="Start Ini Updates")
 
 
 class WWMI_TOOLS_PT_SidePanelExportFooter(bpy.types.Panel):
@@ -329,7 +362,7 @@ class WWMI_Import(bpy.types.Operator):
     """
     bl_idname = "wwmi_tools.import_object"
     bl_label = "导入对象"
-    bl_description = "从帧转储数据中导入使用 WWMI 提取的对象"
+    bl_description = "Import object extracted from frame dump data with WWMI"
 
     bl_options = {'UNDO'}
 
@@ -355,7 +388,7 @@ class WWMI_Export(bpy.types.Operator):
     """
     bl_idname = "wwmi_tools.export_mod"
     bl_label = "导出模组"
-    bl_description = "将对象导出为 WWMI 模组"
+    bl_description = "Export object as WWMI mod"
 
     def get_excluded_buffers(self, context):
         """
@@ -415,7 +448,7 @@ class WWMI_ExtractFrameData(bpy.types.Operator):
     """
     bl_idname = "wwmi_tools.extract_frame_data"
     bl_label = "从帧转储中提取对象"
-    bl_description = "从帧转储中提取对象"
+    bl_description = "Extract objects from frame dump"
 
     def execute(self, context):
         try:
@@ -447,7 +480,7 @@ class WWMI_OpenIniTemplateEditor(bpy.types.Operator):
     Open current custom template in internal or external editor.
     """
     bl_idname = "wwmi_tools.open_ini_template_editor"
-    bl_label = "编辑模版"
+    bl_label = "Edit Template"
     bl_description = "Open current custom template file in internal or external editor."
 
     def execute(self, context):
@@ -456,7 +489,7 @@ class WWMI_OpenIniTemplateEditor(bpy.types.Operator):
         if cfg.custom_template_source == 'EXTERNAL':
             template_path = resolve_path(cfg.custom_template_path)
             if not template_path.is_file():
-                raise ValueError(f'未找到自定义 ini 模板文件: `{template_path}`!')
+                raise ValueError(f'Custom ini template file not found: `{template_path}`!')
             subprocess.Popen([f'{str(template_path)}'], shell=True)
             return {'FINISHED'}
 
@@ -496,8 +529,8 @@ class WWMI_OpenIniTemplateEditor(bpy.types.Operator):
 
 class WWMI_IniTemplateEditor_ToggleLiveUpdates(bpy.types.Operator):
     bl_idname = "wwmi_tools.ini_template_start_live_updates"
-    bl_label = "启动 INI 更新"
-    bl_description = "一旦启动，WWMI Tools 将使用当前设置运行导出, 并在每次模板编辑时开始写入 mod.ini.\n"
+    bl_label = "Start Ini Updates"
+    bl_description = "Once started, WWMI Tools will run export with current settings and start writing mod.ini on each template edit.\n"
     "Warning! Mod export will be blocked until live updates are stopped!"
 
     def execute(self, context):
@@ -517,8 +550,8 @@ class WWMI_IniTemplateEditor_ToggleLiveUpdates(bpy.types.Operator):
 
 class WWMI_IniTemplateEditor_Reset(bpy.types.Operator):
     bl_idname = "wwmi_tools.ini_template_editor_reset"
-    bl_label = "重置模版"
-    bl_description = "警告! 此操作将重置自定义模板为默认值!"
+    bl_label = "Reset Template"
+    bl_description = "Warning! This action will reset custom template to default!"
 
     def execute(self, context):
         cfg = context.scene.wwmi_tools_settings
@@ -541,7 +574,7 @@ class WWMI_IniTemplateEditor_Reset(bpy.types.Operator):
     
 
 class WWMI_TOOLS_PT_TEXT_EDITOR_IniTemplate(bpy.types.Panel):
-    bl_label = "INI 模版 - WWMI Tools"
+    bl_label = "Ini Template - WWMI Tools"
     bl_space_type = "TEXT_EDITOR"
     bl_region_type = "UI"
     bl_category = "Text"
@@ -551,16 +584,16 @@ class WWMI_TOOLS_PT_TEXT_EDITOR_IniTemplate(bpy.types.Panel):
         cfg = context.scene.wwmi_tools_settings
         
         if cfg.custom_template_live_update:
-            layout.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="停止 INI 更新")
+            layout.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="Stop Ini Updates")
         else:
-            layout.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="启动 INI 更新")
+            layout.operator(WWMI_IniTemplateEditor_ToggleLiveUpdates.bl_idname, text="Start Ini Updates")
 
         layout.operator(WWMI_IniTemplateEditor_Reset.bl_idname)
 
 
 class UpdaterPanel(bpy.types.Panel):
     """Update Panel"""
-    bl_label = "更新设置"
+    bl_label = "Update Settings"
     bl_idname = "WWMI_TOOLS_PT_UpdaterPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

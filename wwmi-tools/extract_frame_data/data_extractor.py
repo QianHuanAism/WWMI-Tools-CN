@@ -27,7 +27,7 @@ class ShapeKeyData:
 @dataclass
 class DrawData:
     vb_hash: str
-    cb3_hash : str
+    cb3_hash: str
     cb4_hash: str
     vertex_offset: int
     vertex_count: int
@@ -200,6 +200,7 @@ class DataExtractor:
                     texcoord_buffer=texcoord_buffer,
                     color_buffer=color_buffer,
                     blend_buffer=blend_buffer.get_fragment(vertex_offset, vertex_count),
+                    skeleton_data=branch_call.resources['SKELETON_DATA_BUFFER'],
                     skeleton_data_cb3=branch_call.resources['SKELETON_DATA_BUFFER_CB3'],
                     textures=textures,
                     shapekey_hash=shapekey_hash,

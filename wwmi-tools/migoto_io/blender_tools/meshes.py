@@ -44,7 +44,7 @@ def create_merged_object(context):
             merged_obj.active_shape_key_index = index
 
 
-def transfer_position_data(context):
+def transfer_position_data(context, apply_deltas_to_shapekeys = False):
 
     # Try to use active object from sculpt mode
     merged_obj = bpy.context.active_object
@@ -90,7 +90,59 @@ def transfer_position_data(context):
             else:
                 # Target object has shapekeys, write data to Basis shapekey
                 key_block = obj.data.shape_keys.key_blocks['Basis']
+                # Apply sculpt to shapekeys
+                if apply_deltas_to_shapekeys:
+                    # Get vertex positions from Basis shapekey of original object
+                    original_position_data = numpy.empty(len(key_block.data), dtype=(numpy.float32, 3))
+                    key_block.data.foreach_get('co', original_position_data.ravel())
+                    # Calculate vertex position deltas
+                    position_data_diff = original_position_data - position_data[offset:(offset+vertex_count)]
+                    # Apply position deltas to shapekeys
+                    shapekey_position_data = numpy.empty(len(key_block.data), dtype=(numpy.float32, 3))
+                    for key in obj.data.shape_keys.key_blocks:
+                        if key.name == 'Basis':
+                            continue
+                        key.data.foreach_get('co', shapekey_position_data.ravel())
+                        shapekey_position_data -= position_data_diff
+                        key.data.foreach_set("co", shapekey_position_data.ravel())
+                # Apply sculpt to Basis shapekey
                 key_block.data.foreach_set("co", position_data[offset:(offset+vertex_count)].ravel())
             # Apply updated data to mesh
             obj.data.update()
         offset += vertex_count
+
+
+def convert_vertex_colors_storage_format(context):
+
+    for selected_obj in context.selected_objects:
+
+        with OpenObject(context, selected_obj, 'OBJECT') as obj:
+
+            mesh = obj.evaluated_get(context.evaluated_depsgraph_get()).to_mesh()
+
+            if not hasattr(mesh, 'vertex_colors'):
+                continue
+
+            for semantic_name in ['COLOR', 'COLOR1']:
+
+                if semantic_name not in mesh.vertex_colors:
+                    if semantic_name in mesh.color_attributes:
+                        print(f"[{obj.name}]: Color layer `{semantic_name}` is already stored as Linear")
+                    else:
+                        print(f"[{obj.name}]: Color layer `{semantic_name}` not found in the object")
+                    continue
+
+                # Allocate intermediate data array
+                data = numpy.empty(len(mesh.loops), dtype=(numpy.float32, 4))
+                # Fetch data from deprecated color layer
+                vertex_color = mesh.vertex_colors[semantic_name]
+                vertex_color.data.foreach_get('color', data.ravel())
+                # Remove deprecated color layer
+                obj.data.vertex_colors.remove(vertex_color)
+                # Write data to the new color layer
+                color_attribute = obj.data.color_attributes.new(name=semantic_name, type='FLOAT_COLOR', domain='CORNER')
+                color_attribute.data.foreach_set('color', data.flatten())
+
+                print(f"[{obj.name}]: Converted legacy color layer `{semantic_name}` to Linear")
+
+            obj.data.update()

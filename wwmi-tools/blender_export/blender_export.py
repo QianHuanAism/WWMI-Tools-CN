@@ -65,9 +65,9 @@ class ModExporter:
         try:
             self.extracted_object = read_metadata(self.object_source_folder / 'Metadata.json')
         except FileNotFoundError:
-            raise ConfigError('object_source_folder', '指定文件夹缺少 Metadata.json 文件!')
+            raise ConfigError('object_source_folder', '指定文件夹缺少Metadata.json文件!')
         except Exception as e:
-            raise ConfigError('object_source_folder', f'加载 Metadata.json 失败:\n{e}')
+            raise ConfigError('object_source_folder', f'无法加载Metadata.json文件:\n{e}')
 
         user_context = get_user_context(self.context)
 
@@ -76,7 +76,7 @@ class ModExporter:
         except ConfigError as e:
             raise e
         except Exception as e:
-            raise ConfigError('component_collection', f'Failed to create merged object from collection:\n{e}')
+            raise ConfigError('component_collection', f'从集合创建合并对象失败:\n{e}')
 
         try:
             self.build_data_buffers()
@@ -111,9 +111,9 @@ class ModExporter:
 
     def verify_config(self):
         if self.cfg.component_collection is None:
-            raise ConfigError('component_collection', f'Components collection is not specified!')
+            raise ConfigError('component_collection', f'未指定组件集合!')
         if self.cfg.component_collection not in list(get_scene_collections()):
-            raise ConfigError('component_collection', f'Collection "{self.cfg.component_collection.name}" is not a member of "Scene Collection"!')
+            raise ConfigError('component_collection', f'集合 "{self.cfg.component_collection.name}" 不是 "场景集合" 成员!')
 
     def build_merged_object(self):
         start_time = time.time()
@@ -129,6 +129,7 @@ class ModExporter:
             skeleton_type=SkeletonType.Merged if self.cfg.mod_skeleton_type == 'MERGED' else SkeletonType.PerComponent,
             mesh_scale=0.01,
             mesh_rotation=(0, 0, 180),
+            add_missing_vertex_groups=self.cfg.add_missing_vertex_groups,
         )
         self.merged_object = object_merger.merged_object
         print(f'Merged object build time: {time.time() - start_time :.3f}s ({self.merged_object.vertex_count} vertices, {self.merged_object.index_count} indices)')

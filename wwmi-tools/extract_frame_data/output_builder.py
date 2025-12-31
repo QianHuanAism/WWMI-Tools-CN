@@ -49,7 +49,7 @@ class OutputBuilder:
         for vb_hash, mesh_object in self.mesh_objects.items():
 
             shapekeys = self.shapekeys.get(mesh_object.shapekey_hash, ShapeKeys(offsets_hash=mesh_object.shapekey_hash or ''))
-
+            
             self.filter_textures(mesh_object)
 
             self.objects[vb_hash] = ObjectData(
@@ -124,7 +124,7 @@ class OutputBuilder:
     @staticmethod
     def build_metadata(mesh_object: MeshObject, shapekeys):
         vertex_buffer_layout = next(iter(mesh_object.components)).vertex_buffer.layout
-
+        
         vg_index_stride = vertex_buffer_layout.get_element(AbstractSemantic(Semantic.Blendindices)).stride
         vg_weight_stride = vertex_buffer_layout.get_element(AbstractSemantic(Semantic.Blendweight)).stride
 
@@ -206,7 +206,7 @@ class OutputBuilder:
             ) if shapekeys.shapekey_offsets else ExtractedObjectShapeKeys(),
 
             export_format=export_format,
-
+            
         ).as_json()
 
     @staticmethod

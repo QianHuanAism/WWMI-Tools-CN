@@ -224,7 +224,7 @@ def write_objects(output_directory, objects: Dict[str, ObjectData], allow_missin
 
     for object_hash, object_data in objects.items():
         object_name = object_hash
-
+        
         if object_data.shapekeys.offsets_hash and not object_data.shapekeys.shapekey_offsets:
             if allow_missing_shapekeys:
                 object_name += '_MISSING_SHAPEKEYS'
@@ -332,7 +332,7 @@ def extract_frame_data(cfg):
             exclude_same_slot_hash_textures=cfg.skip_same_slot_hash_textures,
         )
     )
-
+    
     write_objects(resolve_path(cfg.extract_output_folder), output_builder.objects, cfg.allow_missing_shapekeys)
 
     print(f"Execution time: %s seconds" % (time.time() - start_time))

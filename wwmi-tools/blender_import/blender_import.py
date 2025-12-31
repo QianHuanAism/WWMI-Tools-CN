@@ -15,6 +15,7 @@ from ..migoto_io.blender_interface.collections import *
 from ..migoto_io.blender_interface.objects import *
 from ..migoto_io.data_model.data_model import DataModel
 from ..migoto_io.data_model.byte_buffer import NumpyBuffer, MigotoFmt
+from ..migoto_io.blender_tools.vertex_groups import remove_unused_vertex_groups
 
 from ..extract_frame_data.metadata_format import read_metadata
 
@@ -60,6 +61,8 @@ class ObjectImporter:
         col = new_collection(object_source_folder.stem)
         for obj in imported_objects:
             link_object_to_collection(obj, col)
+            if cfg.skip_empty_vertex_groups and cfg.import_skeleton_type == 'MERGED':
+                remove_unused_vertex_groups(context, obj)
 
         print(f'Total import time: {time.time() - start_time :.3f}s')
 
@@ -80,10 +83,10 @@ class ObjectImporter:
             try:
                 extracted_object = read_metadata(object_source_folder / 'Metadata.json')
             except FileNotFoundError:
-                raise ConfigError('object_source_folder', '指定文件夹缺少 Metadata.json 文件!')
+                raise ConfigError('object_source_folder', '指定文件夹缺少Metadata.json文件!')
             except Exception as e:
-                raise ConfigError('object_source_folder', f'加载 Metadata.json 失败:\n{e}')
-            
+                raise ConfigError('object_source_folder', f'无法加载Metadata.json文件:\n{e}')
+
             vg_remap = None
             if cfg.import_skeleton_type == 'MERGED':
                 component_pattern = re.compile(r'.*component[ -_]*([0-9]+).*')
@@ -101,6 +104,7 @@ class ObjectImporter:
             model = DataModel()
             model.flip_winding = True
             model.flip_texcoord_v = True
+            model.legacy_vertex_colors = cfg.color_storage == 'LEGACY'
 
             model.set_data(obj, mesh, index_buffer, vertex_buffer, vg_remap, mirror_mesh=cfg.mirror_mesh, mesh_scale=0.01, mesh_rotation=(0, 0, 180))
 

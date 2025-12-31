@@ -15,7 +15,8 @@ class BlenderDataImporter:
                  index_buffer: NumpyBuffer,
                  vertex_buffer: NumpyBuffer,
                  semantic_converters: Dict[AbstractSemantic, List[callable]], 
-                 format_converters: Dict[AbstractSemantic, List[callable]]):
+                 format_converters: Dict[AbstractSemantic, List[callable]],
+                 legacy_vertex_colors: bool = False):
         
         buffer_semantic = index_buffer.layout.get_element(AbstractSemantic(Semantic.Index))
         index_data = self.get_semantic_data(index_buffer, buffer_semantic, format_converters, semantic_converters)
@@ -45,7 +46,7 @@ class BlenderDataImporter:
             if semantic == Semantic.ShapeKey:
                 shapekeys[buffer_semantic.abstract.index] = data
             elif semantic == Semantic.Color:
-                self.import_colors(mesh, buffer_semantic.get_name(), data, vertex_ids)
+                self.import_colors(mesh, buffer_semantic.get_name(), data, vertex_ids, legacy_vertex_colors)
             elif semantic == Semantic.TexCoord:
                 texcoords[buffer_semantic.abstract.index] = data
             elif semantic == Semantic.Normal:
@@ -83,12 +84,12 @@ class BlenderDataImporter:
             except ValueError:
                 if not data.flags.writeable:
                     data = converter(data.copy())
-                    
+
         # Any remaining normalized integers must be converted to floats before running semantic converters
         if buffer_semantic.format.dxgi_type in [DXGIType.UNORM16, DXGIType.UNORM8, DXGIType.SNORM16, DXGIType.SNORM8]:
             if not numpy.issubdtype(data.dtype, numpy.floating):
                 data = buffer_semantic.format.type_decoder(data)
-
+            
         for converter in semantic_converters.get(buffer_semantic.abstract, []):
             try:
                 data = converter(data)
@@ -118,35 +119,49 @@ class BlenderDataImporter:
         
     def import_vertex_groups(self, 
                              obj: bpy.types.Object, 
-                             vg_indices: Dict[int, numpy.ndarray], 
-                             vg_weights: Dict[int, numpy.ndarray]):
+                             semantic_vg_indices: Dict[int, numpy.ndarray], 
+                             semantic_vg_weights: Dict[int, numpy.ndarray]):
         
-        assert (len(vg_indices) == len(vg_weights))
+        assert (len(semantic_vg_indices) == len(semantic_vg_weights))
 
-        num_vertex_groups = max([indices.max() for indices in vg_indices.values()])
+        vg_index_offset = 0
 
-        for i in range(num_vertex_groups + 1):
-            obj.vertex_groups.new(name=str(i))
+        for semantic_index in sorted(semantic_vg_indices.keys()):
 
-        for semantic_index in sorted(vg_indices.keys()):
-            indices = vg_indices[semantic_index]
-            weights = vg_weights[semantic_index]
+            vg_indices = semantic_vg_indices[semantic_index]
+            vg_weights = semantic_vg_weights[semantic_index]
 
-        for vertex_id, (indexes, weights) in enumerate(zip(indices, weights)):
-            for index, weight in zip(indexes, weights):
-                if weight == 0.0:
-                    continue
-                obj.vertex_groups[index].add((vertex_id,), weight, 'REPLACE')
+            assert (len(vg_indices) == len(vg_weights))
+
+            num_vertex_groups = vg_indices.max()
+
+            semantic_prefix = '' if semantic_index == 0 else f'{semantic_index}_'
+            
+            for i in range(num_vertex_groups + 1):
+                obj.vertex_groups.new(name=semantic_prefix+str(i))
+
+            for vertex_id, (indices, weights) in enumerate(zip(vg_indices, vg_weights)):
+                for index, weight in zip(indices, weights):
+                    if weight == 0.0:
+                        continue
+                    obj.vertex_groups[vg_index_offset+index].add((vertex_id,), weight, 'REPLACE')
+            
+            vg_index_offset += num_vertex_groups
 
     def import_colors(self, 
                       mesh: bpy.types.Mesh, 
                       color_name: str, 
                       color_data: numpy.ndarray, 
-                      vertex_ids: numpy.ndarray):
+                      vertex_ids: numpy.ndarray,
+                      legacy_vertex_colors: bool = False):
         
-        mesh.vertex_colors.new(name=color_name)
-        color_layer = mesh.vertex_colors[color_name].data
-        color_layer.foreach_set('color', color_data[vertex_ids].flatten())
+        if legacy_vertex_colors:
+            mesh.vertex_colors.new(name=color_name)
+            color_layer = mesh.vertex_colors[color_name].data
+            color_layer.foreach_set('color', color_data[vertex_ids].flatten())
+        else:
+            color_attribute = mesh.color_attributes.new(name=color_name, type='FLOAT_COLOR', domain='CORNER')
+            color_attribute.data.foreach_set('color', color_data[vertex_ids].flatten())
 
     def import_normals(self, 
                        mesh: bpy.types.Mesh, 
@@ -216,6 +231,10 @@ class BlenderDataImporter:
             # Add new shapekey
             shapekey = obj.shape_key_add(name=f'Deform {shapekey_id}')
             shapekey.interpolation = 'KEY_LINEAR'
+
+            if bpy.app.version >= (5, 0):
+                # Blender 5.0 defaults shapekeys to 1.0 
+                shapekey.value = 0
 
             position_offsets = numpy.array(offsets, dtype=numpy.float32).reshape(-1, 3)
 

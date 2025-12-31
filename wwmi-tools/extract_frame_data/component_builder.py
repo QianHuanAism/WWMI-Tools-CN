@@ -251,7 +251,7 @@ class ComponentBuilder:
 
             if draw_data is None:
                 raise ValueError(f'no draw data found for component {":".join(draw_guid)}')
-            
+
             # if draw_data.texcoord_buffer.num_elements == 0:
             #     draw_data.texcoord_buffer.extend(draw_data.position_buffer.num_elements)
                 # print(f'Skipped incomplete object {draw_data.vb_hash} (no texcoord_buffer)')

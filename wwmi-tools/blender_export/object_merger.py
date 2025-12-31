@@ -4,6 +4,7 @@ import bpy
 from typing import List, Dict, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from textwrap import dedent
 
 from ..addon.exceptions import ConfigError
 
@@ -11,6 +12,7 @@ from ..migoto_io.blender_interface.collections import *
 from ..migoto_io.blender_interface.objects import *
 
 from ..migoto_io.blender_tools.modifiers import apply_modifiers_for_object_with_shape_keys
+from ..migoto_io.blender_tools.vertex_groups import fill_gaps_in_vertex_groups
 
 from ..extract_frame_data.metadata_format import ExtractedObject
 
@@ -75,6 +77,7 @@ class ObjectMerger:
     skeleton_type: SkeletonType
     mesh_scale: float = 1.0
     mesh_rotation: Tuple[float] = (0.0, 0.0, 0.0)
+    add_missing_vertex_groups: bool = False
     # Output
     merged_object: MergedObject = field(init=False)
 
@@ -159,7 +162,7 @@ class ObjectMerger:
                             muted_shape_keys.append(shape_key)
                     for shape_key in muted_shape_keys:
                         temp_obj.shape_key_remove(shape_key)
-                # Modify temporary objectAdd commentMore actions
+                # Modify temporary object
                 with OpenObject(self.context, temp_obj, mode='OBJECT') as obj:
                     # Apply all transforms
                     bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
@@ -171,9 +174,12 @@ class ObjectMerger:
                     triangulate_object(self.context, temp_obj)
                 # Handle Vertex Groups
                 vertex_groups = get_vertex_groups(temp_obj)
+                # Fill gaps in Vertex Groups list based on VG names (i.e. add group '1' between '0' and '2' if it's missing)
+                if self.add_missing_vertex_groups:
+                    fill_gaps_in_vertex_groups(self.context, temp_obj, internal_call=True)
                 # Remove ignored or unexpected vertex groups
                 if self.skeleton_type == SkeletonType.Merged:
-                    # Exclude VGs with 'ignore' tag or with higher id VG count from Metadata.ini for current component
+                    # Exclude VGs with 'ignore' tag or with higher VG id than total VG count from Metadata.ini
                     total_vg_count = sum([component.vg_count for component in self.extracted_object.components])
                     ignore_list = [vg for vg in vertex_groups if 'ignore' in vg.name.lower() or vg.index >= total_vg_count]
                 elif self.skeleton_type == SkeletonType.PerComponent:
@@ -201,13 +207,12 @@ class ObjectMerger:
         for component_id, component in enumerate(self.components):
             for temp_object in component.objects:
                 remove_mesh(temp_object.object.data)
-        
+
     def transform_merged_object(self, merged_object):
         change_scale = self.mesh_scale != 1.0
         change_rotation = self.mesh_rotation != (0.0, 0.0, 0.0)
         if not change_scale and not change_rotation:
             return
-        
         # Compensate transforms we're about to set
         if change_scale:
             inverted_scale = 1 / self.mesh_scale
@@ -215,9 +220,8 @@ class ObjectMerger:
         if change_rotation:
             inverted_rotation = tuple([360 - r if r != 0 and r != 0 else 0 for r in self.mesh_rotation])
             merged_object.rotation_euler = to_radians(inverted_rotation)
-
         bpy.ops.object.transform_apply(location = False, rotation = True, scale = True)
-        #  Set merged object transforms
+        # Set merged object transforms
         if change_scale:
             merged_object.scale = self.mesh_scale, self.mesh_scale, self.mesh_scale
         if change_rotation:
@@ -242,7 +246,7 @@ class ObjectMerger:
         deselect_all_objects()
         select_object(obj)
         set_active_object(bpy.context, obj)
-
+        
         self.transform_merged_object(obj)
 
         mesh = obj.evaluated_get(self.context.evaluated_depsgraph_get()).to_mesh()

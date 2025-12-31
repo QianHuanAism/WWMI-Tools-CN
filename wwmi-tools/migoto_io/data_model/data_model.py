@@ -21,6 +21,7 @@ class DataModel:
     flip_tangent: bool = False
     flip_bitangent_sign: bool = False
     flip_texcoord_v: bool = False
+    legacy_vertex_colors: bool = False
 
     data_extractor = BlenderDataExtractor()
     buffers_format: Dict[str, BufferLayout] = {}
@@ -99,7 +100,7 @@ class DataModel:
 
         data_importer = BlenderDataImporter()
 
-        data_importer.set_data(obj, mesh, index_buffer, vertex_buffer, semantic_converters, format_converters)
+        data_importer.set_data(obj, mesh, index_buffer, vertex_buffer, semantic_converters, format_converters, self.legacy_vertex_colors)
 
     def get_data(self, 
                  context: bpy.types.Context, 
@@ -107,7 +108,7 @@ class DataModel:
                  obj: bpy.types.Object, 
                  mesh: bpy.types.Mesh, 
                  excluded_buffers: List[str], 
-                 buffers_format: Optional[Dict[Semantic, DXGIFormat]] = None,
+                 buffers_format: Optional[Dict[str, BufferLayout]] = None,
                  mirror_mesh: bool = False,
                  object_index_layout: Optional[List[int]] = None) -> Tuple[Dict[str, NumpyBuffer], int, Optional[List[int]]]:
         
@@ -124,7 +125,7 @@ class DataModel:
                       index_data: numpy.ndarray, 
                       vertex_buffer: NumpyBuffer, 
                       excluded_buffers: List[str],
-                      buffers_format: Dict[Semantic, DXGIFormat]) -> Dict[str, NumpyBuffer]:
+                      buffers_format: Dict[str, BufferLayout]) -> Dict[str, NumpyBuffer]:
         
         start_time = time.time()
 
@@ -156,7 +157,7 @@ class DataModel:
                     collection: bpy.types.Collection, 
                     mesh: bpy.types.Mesh, 
                     excluded_buffers: List[str], 
-                    buffers_format: Dict[Semantic, DXGIFormat],
+                    buffers_format: Dict[str, BufferLayout],
                     mirror_mesh: bool = False,
                     cache_index_data: bool = False):
         
@@ -165,7 +166,7 @@ class DataModel:
         return index_data, vertex_buffer
 
     def make_export_layout(self, 
-                           buffers_format: Dict[Semantic, DXGIFormat],
+                           buffers_format: Dict[str, BufferLayout],
                            excluded_buffers: List[str]):
         fetch_loop_data = False
 
@@ -270,7 +271,7 @@ class DataModel:
     def converter_mirror_vector(data: numpy.ndarray) -> numpy.ndarray:
         data[:, 0] *= -1
         return data
-
+    
     @staticmethod
     def converter_rotate_vector(data: numpy.ndarray, rotation: Tuple[float]) -> numpy.ndarray:
         rotation_matrix = mathutils.Euler(tuple(map(math.radians, rotation)), 'XYZ').to_matrix().to_4x4()
